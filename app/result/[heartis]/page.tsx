@@ -34,7 +34,6 @@ export default function ResultPage() {
             className="absolute inset-0 w-full h-full object-cover"
             style={{
               objectPosition: "center center",
-              imageRendering: "high-quality",
             }}
           />
         ) : (
