@@ -55,18 +55,6 @@ export default function StartPage() {
           Heartis will read your signal.
         </h1>
 
-        <div className="text-white/80 leading-relaxed max-w-[620px] mx-auto mb-8 text-lg">
-          <p>You'll answer 30 tiny questions.</p>
-          <p>
-            This is not a diagnosis. There's no "good" or "bad."
-            It's just a moment scan of your emotional field across 4 dimensions.
-          </p>
-          <p>
-            At the end, you'll see which Heart Core is glowing in you right now —
-            one of 16 possible forms.
-          </p>
-        </div>
-
         <p className="text-white/60 text-sm mb-8">
           ~3 minutes · 30 questions · 16 cores · visual only
         </p>

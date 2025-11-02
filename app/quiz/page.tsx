@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { getHeartisTypeFromCode } from "@/app/result/utils";
 
 const STORAGE_KEY = "heartis_answers";
 
@@ -55,6 +54,7 @@ const LIKERT = [
 type Answers = Record<number, number>;
 const REVERSED = new Set([1, 3, 7, 8, 10, 14, 19, 20, 21, 24, 26, 27, 28, 30]);
 
+// 你这版：O = 开放 + 情绪深度（开放6题 + 情绪相关6题）
 const OCEA = {
   O: [5, 10, 15, 20, 25, 30, 14, 19, 24, 29, 4, 9],
   C: [3, 8, 13, 18, 23, 28],
@@ -81,33 +81,34 @@ function toHL(x: number) {
   return x > 3 ? "H" : "L";
 }
 function codeOCEA(O: number, C: number, E: number, A: number) {
-  return `${toHL(O)}${toHL(C)}${toHL(E)}${toHL(A)}`;
+  return `${toHL(O)}${toHL(C)}${toHL(E)}${toHL(A)}`; // O C E A 顺序
 }
 
+/** ---------- 页面组件 ---------- */
 const PER_PAGE = 6;
 const TOTAL_PAGES = Math.ceil(QUESTIONS.length / PER_PAGE);
 
 export default function QuizPage() {
   const router = useRouter();
-  const [page, setPage] = useState(0);
+  const [page, setPage] = useState(0); // 0..4
   const [answers, setAnswers] = useState<Answers>({});
-  const [mounted, setMounted] = useState(false);
 
+  // 载入已保存答案
   useEffect(() => {
-    setMounted(true);
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) setAnswers(JSON.parse(saved));
     } catch {}
   }, []);
-
+  const currentPage = page + 1;
+  // 计算进度条（按已作答题数实时计算）
   const totalQuestions = 30;
   const answeredCount = Object.keys(answers).length;
   const progressPercent = Math.min(100, (answeredCount / totalQuestions) * 100);
 
   const start = page * PER_PAGE;
   const end = Math.min(start + PER_PAGE, QUESTIONS.length);
-  const slice = useMemo(() => QUESTIONS.slice(start, end), [page]);
+  const slice = useMemo(() => QUESTIONS.slice(start, end), [start, end]);
 
   const pageCompleted = slice.every((q) => answers[q.id] !== undefined);
 
@@ -119,69 +120,19 @@ export default function QuizPage() {
     });
   };
 
-  const handleViewResult = () => {
-    if (!pageCompleted) return;
-    
-    const allAnswered = Array.from({ length: 30 }, (_, i) => i + 1).every(
-      (id) => answers[id] !== undefined
-    );
-
-    if (!allAnswered) {
-      alert("Please answer all questions first.");
-      return;
-    }
-
-    const { O, C, E, A } = scoreOCEA(answers);
-    const code = codeOCEA(O, C, E, A);
-    const heartisType = getHeartisTypeFromCode(code);
-    
-    try {
-      const answersArray = Array.from({ length: 30 }, (_, i) => {
-        const id = i + 1;
-        return answers[id] || 3;
-      });
-
-      localStorage.setItem("heartis_result", heartisType);
-      localStorage.setItem("heartis_code", code);
-      localStorage.setItem("heartis_scores", JSON.stringify({ O, C, E, A }));
-      localStorage.setItem("heartis_answers", JSON.stringify(answersArray));
-    } catch (e) {
-      console.error("Failed to save result data", e);
-    }
-
-    const payload = { O, C, E, A, code, answers, type: heartisType };
-    try {
-      localStorage.setItem("heartis_result_full", JSON.stringify(payload));
-    } catch {}
-
-    try {
-      const history = JSON.parse(localStorage.getItem("heartis_history") || "[]");
-      const answersArray = Array.from({ length: 30 }, (_, i) => {
-        const id = i + 1;
-        return answers[id] || 3;
-      });
-
-      const newRecord = {
-        date: new Date().toLocaleString(),
-        result: heartisType,
-        answers: answersArray,
-      };
-
-      const updatedHistory = [newRecord, ...history].slice(0, 10);
-      localStorage.setItem("heartis_history", JSON.stringify(updatedHistory));
-    } catch (e) {
-      console.error("Failed to save history", e);
-    }
-
-    router.push(`/result?heartis=${heartisType}`);
-  };
-
   const goNext = () => {
     if (!pageCompleted) return;
     if (page + 1 < TOTAL_PAGES) {
       setPage((p) => p + 1);
     } else {
-      handleViewResult();
+      // 结束：计分并跳转
+      const { O, C, E, A } = scoreOCEA(answers);
+      const code = codeOCEA(O, C, E, A);
+      const payload = { O, C, E, A, code, answers };
+      try {
+        localStorage.setItem("heartis_result", JSON.stringify(payload));
+      } catch {}
+      router.push("/result");
     }
   };
 
@@ -189,35 +140,41 @@ export default function QuizPage() {
     if (page > 0) setPage((p) => p - 1);
   };
 
-  const getPageLabel = () => {
-    const startQ = page * PER_PAGE + 1;
-    const endQ = Math.min((page + 1) * PER_PAGE, 30);
-    return `Q${startQ}–${endQ} / 30 • Page ${page + 1}/${TOTAL_PAGES}`;
-  };
-
   return (
     <main className="relative min-h-screen w-full overflow-hidden text-neutral-900 font-serif">
+      {/* 🔸 内容层（背景由 app/quiz/layout.tsx 提供） */}
       <div className="relative max-w-4xl mx-auto py-16 px-6">
+        {/* 顶部标题 + 进度条 */}
         <div className="w-full max-w-5xl mx-auto px-6 pt-10 pb-6 text-center select-none flex flex-col items-center justify-start">
+
+          {/* 大标题 */}
           <h1 className="font-playfair text-[2rem] md:text-[2.3rem] text-[#f8781f] font-semibold leading-snug tracking-wide whitespace-nowrap">
             Every choice reflects a little piece of your heart.
           </h1>
+
+          {/* 副标题 */}
           <p className="text-center text-lg md:text-xl text-[#368edf]/85 font-light max-w-3xl mx-auto leading-relaxed italic transition-colors duration-300 ease-in-out">
-            No 'right' answers. Go with your first feeling.
+            No ‘right’ answers. Go with your first feeling.
           </p>
 
+          {/* 进度条（Heartis 漂浮心形） */}
           <div className="w-4/5 md:w-3/5 mx-auto mt-8 relative">
+            {/* 背景条 */}
             <div className="h-3 bg-[#f3e3d3]/70 rounded-full overflow-hidden shadow-inner relative">
+              {/* 已完成部分 */}
               <div
-                className="absolute inset-y-0 left-0 rounded-full"
+                className="absolute inset-y-0 left-0 rounded-full transition-all duration-700 ease-in-out"
                 style={{
-                  transition: mounted ? "width 0.7s cubic-bezier(0.22, 1, 0.36, 1)" : "none",
+                  transition: "width 0.8s cubic-bezier(0.22, 1, 0.36, 1)",
                   width: `${progressPercent}%`,
-                  background: "linear-gradient(90deg, #fcd9a1 0%, #f8b27a 60%, #f38a3a 100%)",
+                  background:
+                    "linear-gradient(90deg, #fcd9a1 0%, #f8b27a 60%, #f38a3a 100%)",
                   boxShadow: "0 0 12px 3px rgba(248,120,31,0.35)",
                 }}
               />
             </div>
+
+            {/* 心形漂浮点 */}
             <svg
               viewBox="0 0 24 24"
               fill="#f8781f"
@@ -231,17 +188,20 @@ export default function QuizPage() {
             </svg>
           </div>
 
-          <p className="mt-3 text-[#f5b57f] font-futura text-sm tracking-widest">
-            {getPageLabel()}
-          </p>
+          {/* 页码 */}
+          <p className="mt-3 text-[#f5b57f] font-medium">Q1–6 / 30 • Page 1/5</p>
         </div>
 
+        
+
+        {/* 6题 */}
         <div className="flex flex-col gap-8">
           {slice.map((q) => (
             <div
               key={q.id}
               className="rounded-2xl p-6 md:p-7 bg-white/60 backdrop-blur-md ring-1 ring-black/5 shadow-[0_6px_24px_rgba(0,0,0,0.06)]"
             >
+              {/* 题干 */}
               <div className="mb-4 md:mb-5 flex items-start gap-3">
                 <span className="inline-grid h-9 w-9 place-items-center rounded-full text-sm font-semibold bg-[#f7c59f] text-[#402A20]">
                   {q.id}
@@ -255,6 +215,7 @@ export default function QuizPage() {
                 </p>
               </div>
 
+              {/* 新选项样式：分段选择条（矩形段） */}
               <div role="radiogroup" aria-label={`Question ${q.id}`} className="grid grid-cols-5 gap-2.5 md:gap-3">
                 {LIKERT.map(({ v, label }) => {
                   const active = answers[q.id] === v;
@@ -266,7 +227,8 @@ export default function QuizPage() {
                       onClick={() => select(q.id, v)}
                       title={label}
                       className={[
-                        "h-[56px] md:h-[60px] rounded-xl border text-[12px] md:text-[13px] font-normal px-2 transition-all duration-500 ease-in-out shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-900/10",
+                        "h-[56px] md:h-[60px] rounded-xl border text-[12px] md:text-[13px] font-normal px-2 transition-all duration-500 ease-in-out shadow-sm",
+                        "focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-900/20",
                         active
                           ? "bg-[#f7c59f] text-[#402A20] border-[#f7c59f] shadow-[0_0_20px_6px_rgba(247,197,159,0.35)] animate-glow"
                           : "bg-white text-[#5A463A] border-[#f9d8b9] hover:border-[#f6be8c] hover:shadow-[0_0_18px_6px_rgba(245,181,127,0.35)] hover:animate-glow",
@@ -278,35 +240,38 @@ export default function QuizPage() {
                 })}
               </div>
 
+              {/* 选项下的极性说明 */}
               <div className="mt-3 text-[11px] text-neutral-600/80 flex items-center justify-between px-1">
                 <span>Disagree</span>
                 <span>Neutral</span>
                 <span>Agree</span>
               </div>
+
+              {/* 每页底部的完整 legend（只在本页第1题下面显示也行，这里简洁起见放在页底统一） */}
             </div>
           ))}
         </div>
 
-        <div className="mt-12 flex items-center justify-between">
-          {page > 0 && (
-            <button
-              onClick={goPrev}
-              className="px-8 py-3 rounded-2xl bg-white/60 text-[#5A463A] border border-[#f5b57f]/60 font-medium hover:shadow-[0_0_20px_6px_rgba(245,181,127,0.35)] hover:brightness-105 transition-all duration-300 ease-in-out"
-            >
-              ← Previous
-            </button>
-          )}
-          
+        
+
+        {/* 导航按钮（仅 Next → 到 page2） */}
+        <div className="mt-12 flex items-center justify-center">
           <button
-            onClick={goNext}
+            onClick={() => router.push("/quiz/page2")}
             disabled={!pageCompleted}
-            className={`px-8 py-3 rounded-2xl bg-[#f8781f] text-white font-semibold hover:shadow-[0_0_20px_6px_rgba(248,120,31,0.45)] hover:brightness-110 transition-all duration-300 ease-in-out disabled:opacity-40 ${page === 0 ? 'mx-auto' : 'ml-auto'}`}
+            className="px-8 py-3 rounded-2xl bg-[#f8781f] text-white font-semibold hover:shadow-[0_0_20px_6px_rgba(248,120,31,0.45)] hover:brightness-110 transition-all duration-300 ease-in-out disabled:opacity-40"
           >
-            {page + 1 === TOTAL_PAGES ? 'View My Result →' : 'Next →'}
+            Next →
           </button>
         </div>
-      </div>
-    </main>
-  );
+        </div>
+      </main>
+    );
+  }
+  
+/** 把长标签变短（按钮里显示），完整文本放在 title 里已覆盖 */
+function shortLabel(full: string) {
+  return full;
 }
+  
   
